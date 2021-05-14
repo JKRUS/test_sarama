@@ -45,7 +45,7 @@ func selectData(p parameters, closeChannel <-chan syscall.Signal, channelData ch
 			logrus.Fatalf("error %s", err.Error())
 		}
 	}
-	p.file = true
+	//p.file = true
 	if p.file {
 		err := readData(p, channelData)
 		if err != nil {
