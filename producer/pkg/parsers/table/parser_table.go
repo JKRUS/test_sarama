@@ -3,22 +3,23 @@ package table
 import (
 	"bufio"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type table struct {
 	line    map[int]string
-	columns map[int][]string
+	columns map[int][]int
 }
 
 func NewTable() *table {
 	return &table{
 		line:    make(map[int]string),
-		columns: make(map[int][]string),
+		columns: make(map[int][]int),
 	}
 }
 
-func (t *table) ReadTable(path string) (map[int]string, error) {
+func (t *table) ReadTable(path string) (map[int][]int, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -35,14 +36,15 @@ func (t *table) ReadTable(path string) (map[int]string, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return t.line, nil
+	return t.columns, nil
 }
 
-func (t *table) splitString(s string) []string {
+func (t *table) splitString(s string) []int {
 	words := strings.Fields(s)
-	var sw = []string{}
+	var sw []int
 	for _, word := range words {
-		sw = append(sw, word)
+		i, _ := strconv.Atoi(word)
+		sw = append(sw, i)
 	}
 	return sw
 }

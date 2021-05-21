@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/JKRUS/test_sarama/producer/pkg/parsers/config_yaml"
-	"github.com/JKRUS/test_sarama/producer/pkg/parsers/table"
-	"github.com/JKRUS/test_sarama/producer/pkg/randgen"
 	"github.com/Shopify/sarama"
+	"github.com/jkrus/test_sarama/producer/pkg/parsers/config_yaml"
+	"github.com/jkrus/test_sarama/producer/pkg/parsers/table"
+	"github.com/jkrus/test_sarama/producer/pkg/randgen"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	"os"
@@ -25,7 +25,7 @@ type parameters struct {
 func (p *parameters) registerFlags() {
 	flag.BoolVar(&p.generate, "g", false, "generate random numbers")
 	flag.BoolVar(&p.file, "f", false, "read data from file")
-	flag.IntVar(&p.numbers, "n", 5, "the number of iterations for a generator or file pass ")
+	flag.IntVar(&p.numbers, "n", 16, "the number of iterations for a generator or file pass ")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [dir]\n", os.Args[0])
@@ -40,84 +40,76 @@ func selectData(p parameters, closeChannel <-chan syscall.Signal, channelData ch
 	}
 	//p.generate = true
 	if p.generate {
-		err := generateData(p, closeChannel, channelData)
+		err := generateData(p.numbers, closeChannel, channelData)
 		if err != nil {
 			logrus.Fatalf("error %s", err.Error())
 		}
 	}
 	//p.file = true
 	if p.file {
-		err := readData(p, channelData)
+		err := readData(p.numbers, closeChannel, channelData)
 		if err != nil {
 			logrus.Fatalf("error %s", err.Error())
 		}
 	}
 }
 
-func generateData(p parameters, closeChannel <-chan syscall.Signal, channelData chan<- []byte) error {
-	channelRandomGenerator := make(chan float64)
+func generateData(n int, closeChannel <-chan syscall.Signal, channelData chan<- []byte) error {
+	channelRandomGenerator := make(chan int)
 	channelCloseRandomGenerator := make(chan bool)
-	go randgen.RandomGenerator(channelRandomGenerator, channelCloseRandomGenerator)
+	go randgen.RandomGenerator(n, channelRandomGenerator, channelCloseRandomGenerator)
 	i := 0
 loop:
 	for {
-		i++
 		select {
-		case randomNumber, ok := <-channelRandomGenerator:
-			if !ok {
-				fmt.Println("Канал генерации и передачи данных закрыт")
-				close(channelData)
-				break loop
-			} else {
-				tabRes := make(map[string]string)
-				s := fmt.Sprintf("%.2f", randomNumber)
-				tabRes["0"] = s
-				jitem, err := json.Marshal(tabRes)
-				if err != nil {
-					fmt.Println(err.Error())
-				}
-				fmt.Println(s)
-				channelData <- jitem
-				if i == p.numbers {
-					fmt.Println("\nГенерация данных окончена")
-					channelCloseRandomGenerator <- true
-				}
-			}
 		case <-closeChannel:
 			channelCloseRandomGenerator <- true
+			fmt.Println("\nГенерация данных окончена")
+		case randomNumber := <-channelRandomGenerator:
+			tabRes := make(map[string][]int)
+			tabRes["0"] = append(tabRes["0"], randomNumber)
+			jitem, err := json.Marshal(tabRes)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			channelData <- jitem
+			i++
+		}
+		if i == n {
+			break loop
 		}
 	}
 	return nil
 }
 
-func readData(p parameters, channelData chan<- []byte) error {
+func readData(n int, closeChannel <-chan syscall.Signal, channelData chan<- []byte) error {
 	i := 0
-	var s string
+LoopRead:
 	for {
-		i++
-		t := table.NewTable()
-		tab, err := t.ReadTable("data.txt")
-		if err != nil {
-			logrus.Fatalf("error %s", err.Error())
-		}
-		tabRes := make(map[string]string)
-		for k := 0; k < len(tab); k++ {
-			s := strconv.Itoa(k)
-			tabRes[s] = tab[k]
-		}
-		jitem, err := json.Marshal(tabRes)
-		if err != nil {
-			fmt.Println(err.Error())
-		}
-		for k := 0; k < len(tab); k++ {
-			s = fmt.Sprintf("%s", tab[k])
-			channelData <- jitem
-			fmt.Println(s)
-		}
-		if i == p.numbers {
+		select {
+		case <-closeChannel:
 			fmt.Println("\nЧтение данных окончено")
-			close(channelData)
 			break
+		default:
+			i++
+			t := table.NewTable()
+			tab, err := t.ReadTable("data.txt")
+			if err != nil {
+				logrus.Fatalf("error %s", err.Error())
+			}
+			tabRes := make(map[string][]int)
+			for k := 0; k < len(tab); k++ {
+				s := strconv.Itoa(k)
+				tabRes[s] = tab[k]
+			}
+			jitem, err := json.Marshal(tabRes)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			channelData <- jitem
+			if i == n {
+				break LoopRead
+			}
 		}
 	}
 	return nil
@@ -128,9 +120,7 @@ func main() {
 	channelEndProgram := make(chan os.Signal, 1)
 	channelCloseGoroutines := make(chan syscall.Signal)
 	signal.Notify(channelEndProgram, os.Interrupt)
-
-	channelData := make(chan []byte)
-
+	channelData := make(chan []byte, 5)
 	params := parameters{}
 	params.registerFlags()
 	flag.Parse()
@@ -154,23 +144,25 @@ func main() {
 	}()
 
 	var enqueued, producerErrors int
+mainLoop:
 	for {
-
 		select {
-		case data, ok := <-channelData:
-			if !ok {
-				logrus.Printf("Enqueued: %d; errors: %d\n", enqueued, producerErrors)
-				os.Exit(123)
-			}
+		case data := <-channelData:
 			producer.Input() <- &sarama.ProducerMessage{Topic: conf[1], Key: nil, Value: sarama.StringEncoder(data)}
+			fmt.Println(sarama.StringEncoder(data))
 			enqueued++
 		case err := <-producer.Errors():
 			logrus.Println("Failed to produce message", err)
 			producerErrors++
-
 		case <-channelEndProgram:
 			channelCloseGoroutines <- unix.SIGQUIT
+			close(channelData)
 			fmt.Println("\nПользователь завершил выполнение программы")
+		}
+		if enqueued == params.numbers {
+			close(channelData)
+			logrus.Printf("Enqueued: %d; errors: %d\n", enqueued, producerErrors)
+			break mainLoop
 		}
 	}
 }
