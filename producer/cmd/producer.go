@@ -25,7 +25,7 @@ type parameters struct {
 func (p *parameters) registerFlags() {
 	flag.BoolVar(&p.generate, "g", false, "generate random numbers")
 	flag.BoolVar(&p.file, "f", false, "read data from file")
-	flag.IntVar(&p.numbers, "n", 16, "the number of iterations for a generator or file pass ")
+	flag.IntVar(&p.numbers, "n", 5, "the number of iterations for a generator or file pass ")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS] [dir]\n", os.Args[0])
@@ -45,7 +45,7 @@ func selectData(p parameters, closeChannel <-chan syscall.Signal, channelData ch
 			logrus.Fatalf("error %s", err.Error())
 		}
 	}
-	//p.file = true
+	p.file = true
 	if p.file {
 		err := readData(p.numbers, closeChannel, channelData)
 		if err != nil {

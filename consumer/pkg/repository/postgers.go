@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	dataTable = "data"
+	dataTable = "test_data"
 )
 
 type Config struct {

@@ -1,0 +1,26 @@
+{{define "table"}}
+
+<!doctype html>
+<html lang="ru" class="h-100">
+<head>
+    <title>Title</title>
+</head>
+<body class="d-flex flex-column h-100">
+<table class="table">
+    <th>Номер</th>
+    <th>Первая колонка</th>
+    <th>Вторая колонка</th>
+
+    {{range .}}
+    <tr>
+        <td>{{.Id}}</td>
+        <td>{{.First_column}}</td>
+        <td>{{.Second_column}}</td>
+    </tr>
+    {{end}}
+
+</table>
+</body>
+</html>
+
+{{end}}

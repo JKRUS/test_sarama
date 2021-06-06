@@ -1,4 +1,5 @@
 .idea
+app/configs/.env
 consumer/configs/.env
 consumer/main
 consumer/main
